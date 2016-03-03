@@ -1,0 +1,9 @@
+{
+  "id": {
+    "type": "string",
+    "description": "THIS WILL RUIN YOUR DAY"
+  },
+  "error": {
+    "$ref": "../id-as-root/definitions/error.json"
+  }
+}

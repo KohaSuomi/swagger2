@@ -1,0 +1,19 @@
+{
+  "swagger": "2.0",
+  "basePath": "/api/v1",
+  "info": {
+    "license": {
+      "url": "http:\/\/www.gnu.org\/licenses\/gpl.txt",
+      "name": "GPL v3"
+    },
+    "title": "Id as root regression",
+    "version": "1"
+  },
+  "definitions": {
+    "$ref": "id-as-root/defs.json"
+  },
+  "paths": {
+  },
+  "parameters": {
+  }
+}
