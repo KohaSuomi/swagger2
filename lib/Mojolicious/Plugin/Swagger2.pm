@@ -63,7 +63,7 @@ sub render_swagger {
 
 sub register {
   my ($self, $app, $config) = @_;
-  my ($base_path, $paths, $r, $swagger);
+  my ($base_path, $paths, $r, $swagger, $defaultCustomPlaceholder, $xcors);
 
   $swagger = $config->{swagger} || Swagger2->new->load($config->{url} || '"url" is missing');
   $swagger = $swagger->expand;
@@ -96,9 +96,22 @@ sub register {
   if (my $ws = $config->{ws}) {
     $ws->to('swagger.plugin' => $self);
   }
+  $xcors = $self->_use_CORS($app, $swagger);
+  $self->_set_default_CORS($r, $xcors) if $xcors;
 
   $base_path = $swagger->api_spec->data->{basePath} = $r->to_string;
   $base_path =~ s!/$!!;
+  $defaultCustomPlaceholder = $swagger->api_spec->data->{'x-mojo-placeholder'} || ':';
+
+  sub replace_route_placeholders {
+    my ($route_path, $parameters, $defaultCustomPlaceholder) = @_;
+    $route_path =~ s/{([^}]+)}/{
+      my $name = $1;
+      my $type = ($parameters && $parameters->{$name}) ? $parameters->{$name}{'x-mojo-placeholder'} || $defaultCustomPlaceholder : $defaultCustomPlaceholder;
+      "($type$name)";
+    }/ge;
+    return $route_path;
+  }
 
   for my $path (sort { length $a <=> length $b } keys %$paths) {
     my $around_action = $paths->{$path}{'x-mojo-around-action'} || $swagger->api_spec->get('/x-mojo-around-action');
@@ -109,17 +122,23 @@ sub register {
       my $route_path = $path;
       my %parameters = map { ($_->{name}, $_) } @{$op_spec->{parameters} || []};
 
-      $route_path =~ s/{([^}]+)}/{
-        my $name = $1;
-        my $type = $parameters{$name}{'x-mojo-placeholder'} || ':';
-        "($type$name)";
-      }/ge;
+      $route_path = replace_route_placeholders($route_path, \%parameters, $defaultCustomPlaceholder);
 
       $op_spec->{'x-mojo-around-action'} = $around_action if !$op_spec->{'x-mojo-around-action'} and $around_action;
       $op_spec->{'x-mojo-controller'}    = $controller    if !$op_spec->{'x-mojo-controller'}    and $controller;
+
+      my $route_params = {}; #Add params for the route here
+      $self->_get_CORS_opts($route_params, $swagger->api_spec->get('/x-cors'), $route_path, $paths->{$path}) if $xcors; #Set CORS options to $route_params
+
       $app->plugins->emit(
-        swagger_route_added => $r->$http_method($route_path => $self->_generate_request_handler($op_spec)));
+        swagger_route_added => $r->$http_method($route_path => $self->_generate_request_handler($op_spec), $route_params));
       warn "[Swagger2] Add route $http_method $base_path$route_path\n" if DEBUG;
+    }
+
+    if ($xcors) { #Configure preflight handlers.
+      my $route_path = replace_route_placeholders($path, {}, $defaultCustomPlaceholder); #We should somehow intercept the 'x-mojo-placeholder' of the "Operations Object", but that requires tampering with SecureCORS
+      $r->options($route_path => sub {})->to(cb => sub { _cors_preflight($config, @_) });
+      warn "[Swagger2][CORS] Add route options $base_path$route_path\n" if DEBUG;
     }
   }
 
@@ -131,6 +150,280 @@ sub register {
   if ($config->{ensure_swagger_response}) {
     $self->_ensure_swagger_response($app, $config->{ensure_swagger_response}, $swagger);
   }
+}
+
+=head2 _use_CORS
+
+  my $corsEnabled = $class->_use_CORS($app, $swagger);
+
+@returns {HashRef} $xcors, the default Swagger2-spec CORS options, if CORS is enabled, otherwise undef.
+
+=cut
+
+sub _use_CORS {
+  my ($class, $app, $swagger) = @_;
+
+  my $xcors = $swagger->api_spec->get('/x-cors');
+  if (not($xcors)) {
+    warn "[Swagger2][CORS] CORS is not needed. See the docs on how to enable it. Not installing preflight handlers or CORS configurations.\n" if DEBUG;
+  }
+  return $xcors;
+}
+
+sub _set_default_CORS {
+  my ($class, $r, $xcors) = @_;
+  my $corsOpts = $class->_get_CORS_opts(undef, $xcors, undef, undef);
+
+  $r->to(%$corsOpts);
+}
+sub _get_CORS_opts {
+  my ($class, $route_params, $xcors, $path, $pathSpec) = @_;
+
+  my $corsOpts = $route_params || {};
+  if (my $credentials = $class->_handleAccessControlAllowCredentials($xcors, $path, $pathSpec)) {
+    if (defined($credentials)) {
+      $corsOpts->{'cors.credentials'} = ($credentials eq 'true') ? 1 : 0;
+    }
+  }
+  if (my $origin = $class->_handleAccessControlAllowOrigin($xcors, $path, $pathSpec)) {
+    if (defined($origin)) {
+      $corsOpts->{'cors.origin'} = $origin;
+    }
+  }
+  if (my $methods = $class->_handleAccessControlAllowMethods($xcors, $path, $pathSpec)) {
+    if (defined($methods)) {
+      $corsOpts->{'cors.methods'} = $methods;
+    }
+  }
+  $corsOpts->{'cors.headers'} = qr/./msi; #Accept all headers as valid CORS headers
+  return $corsOpts;
+}
+
+=head2 _handleAccessControlAllowCredentials
+
+  my $boolean = $class->_handleAccessControlAllowCredentials($xcors, $path, $pathSpec);
+
+@param {HashRef} $xcors, Swagger2-specifications root definition 'x-cors', which should contain the default CORS options for the whole API.
+@param {String} $path, path to this API endpoint.
+@param {HashRef} $pathSpec, Swagger2 "Paths Object"
+@returns {String Boolean}, 'true', if credentials allowed, 'false' if credentials are explicitly blocked, undef if this not defined and using default|inherited values.
+@die if 'x-cors-access-control-allow-credentials' is not 'true' or 'false'. The directive can be missing altogether.
+
+=cut
+
+my $errorMsg_acac = "value for CORS header 'Access-Control-Allow-Credentials' must be 'true' or 'false' or the swagger-directive 'x-cors-access-control-allow-credentials' must not be defined at all.";
+sub _handleAccessControlAllowCredentials {
+  my ($class, $xcors, $path, $pathSpec) = @_;
+
+  my $default;
+  if ($xcors) {
+    $default = $xcors->{'x-cors-access-control-allow-credentials'};
+    if ($default && $default !~ /^(?:true|false)$/) {
+      my @cc = caller(0);
+      die $cc[3].":> Default $errorMsg_acac";
+    }
+  }
+
+  my $pathOverride;
+  if ($pathSpec) {
+    $pathOverride = $pathSpec->{'x-cors-access-control-allow-credentials'};
+    if ($pathOverride && $pathOverride !~ /^(?:true|false)$/) {
+      my @cc = caller(0);
+      die $cc[3].":> Path '$path', $errorMsg_acac";
+    }
+  }
+  return 'true' if  ($default && $default eq 'true'  && (not($pathOverride) || $pathOverride ne 'false')) || ($pathOverride && $pathOverride eq 'true');
+  return 'false' if ($default && $default eq 'false' && (not($pathOverride) || $pathOverride ne 'true'))  || ($pathOverride && $pathOverride eq 'false');
+  return undef;
+}
+sub _handleAccessControlAllowOrigin {
+  my ($class, $xcors, $path, $pathSpec) = @_;
+
+  my $default;
+  if ($xcors) {
+    $default = $xcors->{'x-cors-access-control-allow-origin-list'};
+  }
+
+  my $pathOverride;
+  if ($pathSpec) {
+    $pathOverride = $pathSpec->{'x-cors-access-control-allow-origin-list'};
+  }
+
+  my $origins = $pathOverride || $default;
+  return undef unless $origins;
+
+  my @origins = map {
+    if ($_ =~ m!^/(.*)/$!) { #This is a regexp, so cast it as such
+      qr($1);
+    }
+    else {
+      $_;
+    }
+  } split(/\s+/, $origins);
+  return \@origins;
+}
+my $errorMsg_acam = "CORS directive 'x-cors-access-control-allow-methods' is not well formed. It should consist of a comma separated list of HTTP verbs, or be an empty string or completely missing from the Swagger2-spec.";
+sub _handleAccessControlAllowMethods {
+  my ($class, $xcors, $path, $pathSpec) = @_;
+
+  sub _validateACAM {
+    my $acam = shift;
+    unless ($acam =~ /^(?&VERB)?(?:\s*,\s*(?&VERB))*$
+                      (?(DEFINE)
+                          (?<VERB>GET|HEAD|POST|PUT|DELETE|TRACE|OPTIONS|CONNECT|PATCH)
+                      )/x) {
+      return undef;
+    }
+    return 1;
+  }
+
+  my $default;
+  if ($xcors) {
+    $default = $xcors->{'x-cors-access-control-allow-methods'};
+    unless (_validateACAM($default || '')) {
+      my @cc = caller(0);
+      die $cc[3].":> Default $errorMsg_acam";
+    }
+  }
+
+  my $pathOverride;
+  if ($pathSpec) {
+    $pathOverride = $pathSpec->{'x-cors-access-control-allow-methods'};
+    unless (_validateACAM($pathOverride || '')) {
+      my @cc = caller(0);
+      die $cc[3].":> Path '$path', $errorMsg_acam";
+    }
+  }
+
+  return $pathOverride if $pathOverride;
+  return $default;
+}
+
+sub _cors_simple {
+  my ($class, $c) = @_;
+
+  ##We can skip generating CORS headers if this request doesn't demand CORS.
+  my $origin = $c->req->headers->origin;
+  if (not($origin)) {
+    return undef; #This is not a CORS-request, or if it is the browser will block the request.
+  }
+  my $absUrl = $c->req->url->to_abs;
+  my $serverUrl = $absUrl->scheme.'://'.$absUrl->host;
+  if ($origin =~ /^\Q$serverUrl\E/) {
+    return undef; #Origin defined but is actually local host.
+  }
+  ##So we actually do need to make the CORS headers
+
+  my $h = $c->res->headers;
+  $h->append(Vary => 'Origin'); #Set this to prevent caching whatever result we return
+
+  #Get options inheritable to this endpoint
+  my $opt = _get_opt($c->match->endpoint);
+  my @errors;
+
+  ##For simple CORS we need less headers
+  _cors_response_check_origin($c, $h, $opt, \@errors);
+
+  ## Report CORS errors ##
+  return $c->render(status => 403, data => join(", ", @errors)) if @errors;
+
+  return undef; #All is fine! Headers set! Full speed ahead!
+}
+sub _cors_preflight {
+  my ($conf, $c) = @_;
+
+  my $h = $c->res->headers;
+  $h->append(Vary => 'Origin'); #Set this to prevent caching whatever result we return
+
+  #Get options inheritable to this endpoint
+  my $opt = _get_opt($c->match->endpoint);
+  my @errors; #Collect all CORS errors here before returning a possible failure message
+
+  ## Access-Control-Allow-Methods ##
+  my $method = $c->req->headers->header('Access-Control-Request-Method');
+  my $methodOk;
+  if ($opt->{methods}) {
+      my %good_methods = map {lc $_ => 1} split /\s*,\s*/ms, $opt->{methods};
+      if ($good_methods{lc $method}) {
+        $methodOk = 1;
+        $h->header('Access-Control-Allow-Methods' => $method) if(not(@errors));
+      }
+  }
+  push @errors, "Method '$method' not allowed" if not($methodOk);
+
+  ## Access-Control-Allow-Origin ##
+  _cors_response_check_origin($c, $h, $opt, \@errors);
+
+  ## Report CORS errors, before headers are attached to the request ##
+  return $c->render(status => 204, data => join(", ", @errors)) if @errors;
+
+  ## Access-Control-Allow-Headers ## Allow all headers. There can be potentially gazillion headers and checking all of them is expensive O(n^2)
+  my $headers = $c->req->headers->header('Access-Control-Request-Headers');
+  $h->header('Access-Control-Allow-Headers' => $headers) if $headers;
+
+  ## Access-Control-Allow-Credentials ##
+  $h->header('Access-Control-Allow-Credentials' => 'true') if ($opt->{credentials});
+
+  ## Access-Control-Max-Age ##
+  $h->header('Access-Control-Max-Age' => $conf->{cors_max_age} || 3600);
+
+  return $c->render(status => 204, data => q{});
+}
+
+=head2 _cors_response_check_origin
+
+  my $errors = _cors_response_check_origin($controller, $headers, $opt);
+
+@param {Mojolicious::Controller} $c
+@param {Mojo::Headers} $h
+@param {HashRef} $opt, CORS options
+@param {ArrayRef} $errors, Any previous errors happened when processing the CORS
+@returns {ArrayRef of Strings}, the error descriptions if errors happened
+
+=cut
+
+sub _cors_response_check_origin {
+  my ($c, $h, $opt, $errors) = @_;
+  $errors = [] unless $errors;
+
+  my $origin = $c->req->headers->origin;
+  my $allowedOrigins = $opt->{origin};
+  my $originOk;
+  if (ref $allowedOrigins eq 'ARRAY') {
+    foreach my $ao (@$allowedOrigins) {
+      if ((ref $ao eq 'Regexp' && $origin =~ /$ao/ms) || #Match regexp
+          ($ao eq '*' || $ao eq $origin) #or match anything or exact match
+          ) {
+        $originOk = 1;
+        $h->header('Access-Control-Allow-Origin' => $origin) if(not(@$errors));
+        return;
+      }
+    }
+  }
+  push @$errors, "Origin '$origin' not allowed" if not($originOk);
+}
+
+=head2 _get_opt
+
+  my $opts = _get_opt($route);
+
+Recursively looks for CORS-options starting from the given route and ending at root route.
+@returns {HashRef} CORS-options
+
+=cut
+
+sub _get_opt {
+    my ($r) = @_;
+    my %opt;
+    while ($r) {
+        for my $name (qw( origin credentials expose headers methods )) {
+            if (!exists $opt{$name} && exists $r->to->{"cors.$name"}) {
+                $opt{$name} = $r->to->{"cors.$name"};
+            }
+        }
+        $r = $r->parent;
+    }
+    return \%opt;
 }
 
 sub _ensure_swagger_response {
@@ -164,6 +457,9 @@ sub _generate_request_handler {
 
     return $c->render_swagger(_error($e), {}, 501) if $e = _find_action($c, $defaults);
     $c = $defaults->{controller}->new(%$c);
+
+    return if $self->_cors_simple($c); #Return if we get an error
+
     ($v, $input) = $self->_validate_input($c, $op_spec);
 
     return $c->render_swagger($v, {}, 400) if @{$v->{errors}};

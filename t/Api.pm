@@ -100,4 +100,13 @@ sub import {
   warnings->import;
 }
 
+sub cors_list_pets {
+  my ($c, $args, $cb) = @_;
+  $c->$cb({pet1 => 'George', pet2 => 'Georgina'}, 200);
+}
+sub cors_delete_pets {
+  my ($c, $args, $cb) = @_;
+  $c->$cb({delete => 'ok'}, 204);
+}
+
 1;
