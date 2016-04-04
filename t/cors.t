@@ -11,6 +11,9 @@ use Mojolicious;
 require_ok('Mojolicious::Plugin::Swagger2');
 use Mojolicious::Plugin::Swagger2;
 
+require_ok('Mojolicious::Plugin::Swagger2::CORS');
+use Mojolicious::Plugin::Swagger2::CORS;
+
 subtest "CORS internals", \&CORSInternals;
 sub CORSInternals {
   my ($xcors, $swagger2path, $swagger2pathSpec, $retVal);
@@ -24,15 +27,17 @@ sub CORSInternals {
     'x-cors-access-control-allow-methods' => 'GET, POST, DELETE',
   };
 
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowOrigin($xcors, undef, undef);
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowOrigin($xcors, undef, undef);
   is($retVal->[0], 'http://cors.example.com', 'Default _handleAccessControlAllowOrigin() static url');
   is(ref $retVal->[1], 'Regexp', 'Default _handleAccessControlAllowOrigin() regexp');
   my $regexp = $retVal->[1];
   ok('https://testi.kirjasto.fi:9999' =~ /$regexp/, 'Default _handleAccessControlAllowOrigin() regexp successfully parsed');
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowCredentials($xcors, undef, undef);
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowCredentials($xcors, undef, undef);
   is($retVal, 'true', 'Default _handleAccessControlAllowCredentials()');
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowMethods($xcors, undef, undef);
-  is($retVal, 'GET, POST, DELETE', 'Default _handleAccessControlAllowMethods()');
+  $retVal = [sort(keys(Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowMethods($xcors, undef, undef)))];
+  is($retVal->[0], 'DELETE', 'Default _handleAccessControlAllowMethods()');
+  is($retVal->[1], 'GET',    'Default _handleAccessControlAllowMethods()');
+  is($retVal->[2], 'POST',   'Default _handleAccessControlAllowMethods()');
 
   ##x-cors path spec
   $swagger2path = '/api/cors-pets';
@@ -42,20 +47,20 @@ sub CORSInternals {
     'x-cors-access-control-allow-methods' => 'HEAD',
   };
 
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowOrigin(undef, $swagger2path, $swagger2pathSpec);
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowOrigin(undef, $swagger2path, $swagger2pathSpec);
   is($retVal->[0], '*', 'Path not implemented _handleAccessControlAllowOrigin()');
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowCredentials(undef, $swagger2path, $swagger2pathSpec);
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowCredentials(undef, $swagger2path, $swagger2pathSpec);
   is($retVal, 'false', 'Path _handleAccessControlAllowCredentials()');
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowMethods(undef, $swagger2path, $swagger2pathSpec);
-  is($retVal, 'HEAD', 'Path _handleAccessControlAllowMethods()');
+  $retVal = [sort(keys(Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowMethods(undef, $swagger2path, $swagger2pathSpec)))];
+  is($retVal->[0], 'HEAD', 'Path _handleAccessControlAllowMethods()');
 
   ##x-cors path undef
   $swagger2pathSpec = {};
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowOrigin(undef, $swagger2path, $swagger2pathSpec);
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowOrigin(undef, $swagger2path, $swagger2pathSpec);
   is($retVal, undef, 'Path undef _handleAccessControlAllowOrigin()');
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowCredentials(undef, $swagger2path, $swagger2pathSpec);
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowCredentials(undef, $swagger2path, $swagger2pathSpec);
   is($retVal, undef, 'Path undef _handleAccessControlAllowCredentials()');
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowMethods(undef, $swagger2path, $swagger2pathSpec);
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowMethods(undef, $swagger2path, $swagger2pathSpec);
   is($retVal, undef, 'Path _handleAccessControlAllowMethods()');
 
 
@@ -68,13 +73,13 @@ sub CORSInternals {
     'x-cors-access-control-allow-methods' => 'SLARP, SLURP, DARP',
   };
 
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowOrigin($xcors, undef, undef);
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowOrigin($xcors, undef, undef);
   is($retVal->[0], 'this', 'Default error cannot be detected _handleAccessControlAllowOrigin()');
   is($retVal->[1], 'is',   'Default error cannot be detected _handleAccessControlAllowOrigin()');
   is($retVal->[2], 'bad',  'Default error cannot be detected _handleAccessControlAllowOrigin()');
-  eval {$retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowCredentials($xcors, undef, undef)};
+  eval {$retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowCredentials($xcors, undef, undef)};
   ok($@ =~ /value for CORS header 'Access-Control-Allow-Credentials' must be 'true'/, 'Default error _handleAccessControlAllowCredentials()');
-  eval {$retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowMethods($xcors, undef, undef)};
+  eval {$retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowMethods($xcors, undef, undef)};
   ok($@ =~ /CORS directive 'x-cors-access-control-allow-methods' is not well formed./, 'Default error _handleAccessControlAllowMethods()');
 
   ################################
@@ -88,15 +93,15 @@ sub CORSInternals {
   $swagger2pathSpec = {
     'x-cors-access-control-allow-origin-list' => '*',
     'x-cors-access-control-allow-credentials' => 'false',
-    'x-cors-access-control-allow-methods' => 'HEAD',
+    'x-cors-access-control-allow-methods' => '*',
   };
 
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowOrigin($xcors, $swagger2path, $swagger2pathSpec);
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowOrigin($xcors, $swagger2path, $swagger2pathSpec);
   is($retVal->[0], '*', 'Default overloaded _handleAccessControlAllowOrigin()');
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowCredentials($xcors, $swagger2path, $swagger2pathSpec);
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowCredentials($xcors, $swagger2path, $swagger2pathSpec);
   is($retVal, 'false', 'Default overloaded _handleAccessControlAllowCredentials()');
-  $retVal = Mojolicious::Plugin::Swagger2->_handleAccessControlAllowMethods($xcors, $swagger2path, $swagger2pathSpec);
-  is($retVal, 'HEAD', 'Default overloaded _handleAccessControlAllowMethods()');
+  $retVal = [sort(keys(Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowMethods($xcors, $swagger2path, $swagger2pathSpec)))];
+  is($retVal->[0], '*', 'Default overloaded _handleAccessControlAllowMethods()');
 
   ##x-cors path spec
 
@@ -121,6 +126,7 @@ sub simpleCORS {
   is($headers->header('Access-Control-Allow-Origin'),      'http://cors.example.com:9999',   "Access-Control-Allow-Origin");
   is($headers->header('Access-Control-Allow-Methods'),     undef,                            "Access-Control-Allow-Methods undef");
   is($headers->header('Access-Control-Allow-Headers'),     undef,                            "Access-Control-Allow-Headers undef");
+  is($headers->header('Access-Control-Expose-Headers'),    undef,                            "Access-Control-Expose-Headers undef");
   is($headers->header('Access-Control-Allow-Credentials'), undef,                            "Access-Control-Allow-Credentials undef. Only preflight can set this");
   $json = $tx->res->json;
   is($json->{pet1}, 'George',   "Got George...");
@@ -137,6 +143,7 @@ sub simpleCORS {
   is($headers->header('Access-Control-Allow-Origin'),      undef, "Access-Control-Allow-Origin undef");
   is($headers->header('Access-Control-Allow-Methods'),     undef, "Access-Control-Allow-Methods undef");
   is($headers->header('Access-Control-Allow-Headers'),     undef, "Access-Control-Allow-Headers undef");
+  is($headers->header('Access-Control-Expose-Headers'),    undef, "Access-Control-Expose-Headers undef");
   is($headers->header('Access-Control-Allow-Credentials'), undef, "Access-Control-Allow-Credentials undef");
   $body = $tx->res->body;
   is($body, "Origin 'http://fake-cors.example.com:9999' not allowed", "Origin not allowed");
@@ -151,6 +158,7 @@ sub simpleCORS {
   is($headers->header('Access-Control-Allow-Origin'),      undef, "Access-Control-Allow-Origin undef");
   is($headers->header('Access-Control-Allow-Methods'),     undef, "Access-Control-Allow-Methods undef");
   is($headers->header('Access-Control-Allow-Headers'),     undef, "Access-Control-Allow-Headers undef");
+  is($headers->header('Access-Control-Expose-Headers'),    undef, "Access-Control-Expose-Headers undef");
   is($headers->header('Access-Control-Allow-Credentials'), undef, "Access-Control-Allow-Credentials undef");
   $json = $tx->res->json;
   is($json->{pet1}, 'George',   "Got George...");
@@ -167,6 +175,7 @@ sub simpleCORS {
   is($headers->header('Access-Control-Allow-Origin'),      undef, "Access-Control-Allow-Origin undef");
   is($headers->header('Access-Control-Allow-Methods'),     undef, "Access-Control-Allow-Methods undef");
   is($headers->header('Access-Control-Allow-Headers'),     undef, "Access-Control-Allow-Headers undef");
+  is($headers->header('Access-Control-Expose-Headers'),    undef, "Access-Control-Expose-Headers undef");
   is($headers->header('Access-Control-Allow-Credentials'), undef, "Access-Control-Allow-Credentials undef");
   is($tx->res->body, '', "Delete ok");
 
@@ -181,6 +190,7 @@ sub simpleCORS {
   is($headers->header('Access-Control-Allow-Origin'),      undef, "Access-Control-Allow-Origin undef");
   is($headers->header('Access-Control-Allow-Methods'),     undef, "Access-Control-Allow-Methods undef");
   is($headers->header('Access-Control-Allow-Headers'),     undef, "Access-Control-Allow-Headers undef");
+  is($headers->header('Access-Control-Expose-Headers'),    undef, "Access-Control-Expose-Headers undef");
   is($headers->header('Access-Control-Allow-Credentials'), undef, "Access-Control-Allow-Credentials undef");
   $body = $tx->res->body;
   is($body, "Origin 'http://fake-cors.example.com:9999' not allowed", "Origin not allowed");
@@ -202,11 +212,12 @@ sub preflightRequest {
   $tx->req->headers->add('Access-Control-Request-Headers' => 'Timezone-Offset, Sample-Source');
   $tx = $ua->start($tx);
 
-  is($tx->res->code, 204, "Preflight response 204");
+  is($tx->res->code, 200, "Preflight response 200");
   $headers = $tx->res->headers;
   is($headers->header('Access-Control-Allow-Origin'),      'http://cors.example.com:9999',   "Access-Control-Allow-Origin");
-  is($headers->header('Access-Control-Allow-Methods'),     'GET',                            "Access-Control-Allow-Methods");
+  is($headers->header('Access-Control-Allow-Methods'),     'GET, POST',                      "Access-Control-Allow-Methods default overloaded with any");
   is($headers->header('Access-Control-Allow-Headers'),     'Timezone-Offset, Sample-Source', "Access-Control-Allow-Headers");
+  is($headers->header('Access-Control-Expose-Headers'),    'Timezone-Offset, Sample-Source', "Access-Control-Expose-Headers");
   is($headers->header('Access-Control-Allow-Credentials'), 'true',                           "Access-Control-Allow-Credentials");
 
   #Make a OPTIONS preflight request for following DELETE-requests :) Mojo-fu!
@@ -217,11 +228,12 @@ sub preflightRequest {
   $tx->req->headers->add('Access-Control-Request-Headers' => 'Timezone-Offset, Sample-Source');
   $tx = $ua->start($tx);
 
-  is($tx->res->code, 204, "Preflight response 204");
+  is($tx->res->code, 200, "Preflight response 200");
   $headers = $tx->res->headers;
   is($headers->header('Access-Control-Allow-Origin'),      'http://cors.example.com:9999',   "Access-Control-Allow-Origin");
-  is($headers->header('Access-Control-Allow-Methods'),     'DELETE',                         "Access-Control-Allow-Methods");
+  is($headers->header('Access-Control-Allow-Methods'),     'DELETE',                         "Access-Control-Allow-Methods default overloaded");
   is($headers->header('Access-Control-Allow-Headers'),     'Timezone-Offset, Sample-Source', "Access-Control-Allow-Headers");
+  is($headers->header('Access-Control-Expose-Headers'),    'Timezone-Offset, Sample-Source', "Access-Control-Expose-Headers");
   is($headers->header('Access-Control-Allow-Credentials'), undef,                            "Access-Control-Allow-Credentials default overloaded");
 }
 
@@ -242,11 +254,34 @@ __DATA__
   },
   "paths": {
     "/cors-pets": {
+      "x-cors-access-control-allow-methods": "*",
       "get": {
         "x-mojo-controller": "t::Api",
         "operationId": "corsListPets",
         "responses": {
           "200": {"description": "anything"}
+        }
+      },
+      "post" : {
+        "x-mojo-controller": "t::Api",
+        "operationId" : "addPet",
+        "parameters" : [
+          {
+            "name" : "pet",
+            "schema" : { "$ref" : "#/definitions/Pet" },
+            "in" : "body",
+            "required": true,
+            "description" : "Pet object that needs to be added to the store"
+          }
+        ],
+        "responses" : {
+          "200": {
+            "description": "pet response",
+            "schema": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/Pet" }
+            }
+          }
         }
       }
     },
@@ -267,6 +302,15 @@ __DATA__
         "responses": {
           "204": {"description": "delete ok"}
         }
+      }
+    }
+  },
+  "definitions" : {
+    "Pet" : {
+      "required" : ["name"],
+      "properties" : {
+        "id" : { "format" : "int64", "type" : "integer" },
+        "name" : { "type" : "string" }
       }
     }
   }
