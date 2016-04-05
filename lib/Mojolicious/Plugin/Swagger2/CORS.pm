@@ -191,16 +191,16 @@ sub get_opts {
   my ($class, $route_params, $xcors, $path, $pathSpec) = @_;
 
   my $corsOpts = $route_params || {};
-  if (my $credentials = $class->_handleAccessControlAllowCredentials($xcors, $path, $pathSpec)) {
+  if (my $credentials = $class->_handle_access_control_allow_credentials($xcors, $path, $pathSpec)) {
     $corsOpts->{'cors.credentials'} = ($credentials eq 'true') ? 1 : 0;
   }
-  if (my $origin = $class->_handleAccessControlAllowOrigin($xcors, $path, $pathSpec)) {
+  if (my $origin = $class->_handle_access_control_allow_origin($xcors, $path, $pathSpec)) {
     $corsOpts->{'cors.origin'} = $origin;
   }
-  if (my $methods = $class->_handleAccessControlAllowMethods($xcors, $path, $pathSpec)) {
+  if (my $methods = $class->_handle_access_control_allow_methods($xcors, $path, $pathSpec)) {
     $corsOpts->{'cors.methods'} = $methods;
   }
-  my $maxAge = $class->_handleAccessControlMaxAge($xcors, $path, $pathSpec);
+  my $maxAge = $class->_handle_access_control_max_age($xcors, $path, $pathSpec);
   if (defined($maxAge)) { #Max age can be 0
     $corsOpts->{'cors.maxAge'} = $maxAge;
   }
@@ -210,9 +210,9 @@ sub get_opts {
   return $corsOpts;
 }
 
-=head2 _handleAccessControlAllowCredentials
+=head2 _handle_access_control_allow_credentials
 
-  my $boolean = $class->_handleAccessControlAllowCredentials($xcors, $path, $pathSpec);
+  my $boolean = $class->_handle_access_control_allow_credentials($xcors, $path, $pathSpec);
 
 One or both of the params $xcors and $pathSpec must be defined.
 @param {HashRef} $xcors, Swagger2-specifications root definition 'x-cors', which should contain the default CORS options for the whole API.
@@ -224,7 +224,7 @@ One or both of the params $xcors and $pathSpec must be defined.
 =cut
 
 my $errorMsg_acac = "value for CORS header 'Access-Control-Allow-Credentials' must be 'true' or 'false' or the swagger-directive 'x-cors-access-control-allow-credentials' must not be defined at all.";
-sub _handleAccessControlAllowCredentials {
+sub _handle_access_control_allow_credentials {
   my ($class, $xcors, $path, $pathSpec) = @_;
 
   my $default;
@@ -250,7 +250,7 @@ sub _handleAccessControlAllowCredentials {
 }
 
 my $errorMsg_acma = "value for CORS header 'Access-Control-Max-Age' must be an integer of seconds or the swagger-directive 'x-cors-access-control-max-age' must not be defined at all.";
-sub _handleAccessControlMaxAge {
+sub _handle_access_control_max_age {
   my ($class, $xcors, $path, $pathSpec) = @_;
 
   my $default;
@@ -275,7 +275,7 @@ sub _handleAccessControlMaxAge {
   return undef;
 }
 
-sub _handleAccessControlAllowOrigin {
+sub _handle_access_control_allow_origin {
   my ($class, $xcors, $path, $pathSpec) = @_;
 
   my $default;
@@ -306,10 +306,10 @@ sub _handleAccessControlAllowOrigin {
 }
 
 my $errorMsg_acam = "CORS directive 'x-cors-access-control-allow-methods' is not well formed. It should consist of a comma separated list of HTTP verbs, or be an empty string or a '*' to allow all methods or be completely missing from the Swagger2-spec.";
-sub _handleAccessControlAllowMethods {
+sub _handle_access_control_allow_methods {
   my ($class, $xcors, $path, $pathSpec) = @_;
 
-  sub _validateACAM {
+  my $_validate_acam = sub {
     my $acam = shift;
     return 1 if $acam eq '*';
     unless ($acam =~ /^(?&VERB)?(?:\s*,\s*(?&VERB))*$
@@ -319,12 +319,12 @@ sub _handleAccessControlAllowMethods {
       return undef;
     }
     return 1;
-  }
+  };
 
   my $default;
   if ($xcors) {
     $default = $xcors->{'x-cors-access-control-allow-methods'};
-    unless (_validateACAM($default || '')) {
+    unless (&$_validate_acam($default || '')) {
       my @cc = caller(0);
       die $cc[3].":> Default value '$default', $errorMsg_acam";
     }
@@ -333,7 +333,7 @@ sub _handleAccessControlAllowMethods {
   my $pathOverride;
   if ($pathSpec) {
     $pathOverride = $pathSpec->{'x-cors-access-control-allow-methods'};
-    unless (_validateACAM($pathOverride || '')) {
+    unless (&$_validate_acam($pathOverride || '')) {
       my @cc = caller(0);
       die $cc[3].":> Path '$path' value '$pathOverride', $errorMsg_acam";
     }
@@ -375,9 +375,9 @@ sub is_CORS_request {
 }
 
 
-=head2 simple
+=head2 handle_simple_cors
 
-  $class->simple($c);
+  $class->handle_simple_cors($c);
 
 Make a simple CORS check. Set CORS headers if check succeeds or there was no need for a CORS check,
 or return 403 if request is unauthorized.
@@ -386,7 +386,7 @@ or return 403 if request is unauthorized.
 
 =cut
 
-sub simple {
+sub handle_simple_cors {
   my ($class, $c) = @_;
 
   return undef unless $class->is_CORS_request($c);
@@ -405,9 +405,9 @@ sub simple {
   return undef; #All is fine! Headers set! Full speed ahead!
 }
 
-=head2 preflight
+=head2 handle_preflight_cors
 
-  my $errors = $class->preflight($c); #Sets CORS headers
+  my $errors = $class->handle_preflight_cors($c); #Sets CORS headers
   $c->render(status => 200, data => {}) unless $errors;
 
 Handles the CORS preflight-request.
@@ -418,7 +418,7 @@ This is intended to enhance the original OPTIONS-request handler, not substitute
 
 =cut
 
-sub preflight {
+sub handle_preflight_cors {
   my ($class, $c) = @_;
 
   return undef unless $class->is_CORS_request($c);

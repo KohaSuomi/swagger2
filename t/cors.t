@@ -1,7 +1,4 @@
 use Modern::Perl;
-$ENV{SWAGGER2_DEBUG} = 1;
-use lib '../lib/';
-use lib '../';
 
 use Test::Mojo;
 use Test::More;
@@ -30,19 +27,19 @@ sub CORSInternals {
     'x-cors-access-control-allow-methods' => 'GET, POST, DELETE',
   };
 
-  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowOrigin($xcors, undef, undef);
-  is($retVal->[0], 'http://cors.example.com', 'Default _handleAccessControlAllowOrigin() static url');
-  is(ref $retVal->[1], 'Regexp', 'Default _handleAccessControlAllowOrigin() regexp');
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_origin($xcors, undef, undef);
+  is($retVal->[0], 'http://cors.example.com', 'Default _handle_access_control_allow_origin() static url');
+  is(ref $retVal->[1], 'Regexp', 'Default _handle_access_control_allow_origin() regexp');
   my $regexp = $retVal->[1];
-  ok('https://testi.kirjasto.fi:9999' =~ /$regexp/, 'Default _handleAccessControlAllowOrigin() regexp successfully parsed');
-  is(ref $retVal->[2], 'CODE', 'Default _handleAccessControlAllowOrigin() subroutine');
-  is(&{$retVal->[2]}('http://cors.example.com:8080'), 'http://cors.example.com:8080', 'Default _handleAccessControlAllowOrigin() subroutine works!');
-  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowCredentials($xcors, undef, undef);
-  is($retVal, 'true', 'Default _handleAccessControlAllowCredentials()');
-  $retVal = [sort(keys(Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowMethods($xcors, undef, undef)))];
-  is($retVal->[0], 'DELETE', 'Default _handleAccessControlAllowMethods()');
-  is($retVal->[1], 'GET',    'Default _handleAccessControlAllowMethods()');
-  is($retVal->[2], 'POST',   'Default _handleAccessControlAllowMethods()');
+  ok('https://testi.kirjasto.fi:9999' =~ /$regexp/, 'Default _handle_access_control_allow_origin() regexp successfully parsed');
+  is(ref $retVal->[2], 'CODE', 'Default _handle_access_control_allow_origin() subroutine');
+  is(&{$retVal->[2]}('http://cors.example.com:8080'), 'http://cors.example.com:8080', 'Default _handle_access_control_allow_origin() subroutine works!');
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_credentials($xcors, undef, undef);
+  is($retVal, 'true', 'Default _handle_access_control_allow_credentials()');
+  $retVal = [sort(keys(Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_methods($xcors, undef, undef)))];
+  is($retVal->[0], 'DELETE', 'Default _handle_access_control_allow_methods()');
+  is($retVal->[1], 'GET',    'Default _handle_access_control_allow_methods()');
+  is($retVal->[2], 'POST',   'Default _handle_access_control_allow_methods()');
 
   ##x-cors path spec
   $swagger2path = '/api/cors-pets';
@@ -52,21 +49,21 @@ sub CORSInternals {
     'x-cors-access-control-allow-methods' => 'HEAD',
   };
 
-  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowOrigin(undef, $swagger2path, $swagger2pathSpec);
-  is($retVal->[0], '*', 'Path not implemented _handleAccessControlAllowOrigin()');
-  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowCredentials(undef, $swagger2path, $swagger2pathSpec);
-  is($retVal, 'false', 'Path _handleAccessControlAllowCredentials()');
-  $retVal = [sort(keys(Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowMethods(undef, $swagger2path, $swagger2pathSpec)))];
-  is($retVal->[0], 'HEAD', 'Path _handleAccessControlAllowMethods()');
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_origin(undef, $swagger2path, $swagger2pathSpec);
+  is($retVal->[0], '*', 'Path not implemented _handle_access_control_allow_origin()');
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_credentials(undef, $swagger2path, $swagger2pathSpec);
+  is($retVal, 'false', 'Path _handle_access_control_allow_credentials()');
+  $retVal = [sort(keys(Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_methods(undef, $swagger2path, $swagger2pathSpec)))];
+  is($retVal->[0], 'HEAD', 'Path _handle_access_control_allow_methods()');
 
   ##x-cors path undef
   $swagger2pathSpec = {};
-  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowOrigin(undef, $swagger2path, $swagger2pathSpec);
-  is($retVal, undef, 'Path undef _handleAccessControlAllowOrigin()');
-  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowCredentials(undef, $swagger2path, $swagger2pathSpec);
-  is($retVal, undef, 'Path undef _handleAccessControlAllowCredentials()');
-  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowMethods(undef, $swagger2path, $swagger2pathSpec);
-  is($retVal, undef, 'Path _handleAccessControlAllowMethods()');
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_origin(undef, $swagger2path, $swagger2pathSpec);
+  is($retVal, undef, 'Path undef _handle_access_control_allow_origin()');
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_credentials(undef, $swagger2path, $swagger2pathSpec);
+  is($retVal, undef, 'Path undef _handle_access_control_allow_credentials()');
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_methods(undef, $swagger2path, $swagger2pathSpec);
+  is($retVal, undef, 'Path _handle_access_control_allow_methods()');
 
 
   ##########################
@@ -78,14 +75,14 @@ sub CORSInternals {
     'x-cors-access-control-allow-methods' => 'SLARP, SLURP, DARP',
   };
 
-  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowOrigin($xcors, undef, undef);
-  is($retVal->[0], 'this', 'Default error cannot be detected _handleAccessControlAllowOrigin()');
-  is($retVal->[1], 'is',   'Default error cannot be detected _handleAccessControlAllowOrigin()');
-  is($retVal->[2], 'bad',  'Default error cannot be detected _handleAccessControlAllowOrigin()');
-  eval {$retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowCredentials($xcors, undef, undef)};
-  ok($@ =~ /value for CORS header 'Access-Control-Allow-Credentials' must be 'true'/, 'Default error _handleAccessControlAllowCredentials()');
-  eval {$retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowMethods($xcors, undef, undef)};
-  ok($@ =~ /CORS directive 'x-cors-access-control-allow-methods' is not well formed./, 'Default error _handleAccessControlAllowMethods()');
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_origin($xcors, undef, undef);
+  is($retVal->[0], 'this', 'Default error cannot be detected _handle_access_control_allow_origin()');
+  is($retVal->[1], 'is',   'Default error cannot be detected _handle_access_control_allow_origin()');
+  is($retVal->[2], 'bad',  'Default error cannot be detected _handle_access_control_allow_origin()');
+  eval {$retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_credentials($xcors, undef, undef)};
+  ok($@ =~ /value for CORS header 'Access-Control-Allow-Credentials' must be 'true'/, 'Default error _handle_access_control_allow_credentials()');
+  eval {$retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_methods($xcors, undef, undef)};
+  ok($@ =~ /CORS directive 'x-cors-access-control-allow-methods' is not well formed./, 'Default error _handle_access_control_allow_methods()');
 
   ################################
   ### x-cors default overloads ###
@@ -101,12 +98,12 @@ sub CORSInternals {
     'x-cors-access-control-allow-methods' => '*',
   };
 
-  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowOrigin($xcors, $swagger2path, $swagger2pathSpec);
-  is($retVal->[0], '*', 'Default overloaded _handleAccessControlAllowOrigin()');
-  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowCredentials($xcors, $swagger2path, $swagger2pathSpec);
-  is($retVal, 'false', 'Default overloaded _handleAccessControlAllowCredentials()');
-  $retVal = [sort(keys(Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowMethods($xcors, $swagger2path, $swagger2pathSpec)))];
-  is($retVal->[0], '*', 'Default overloaded _handleAccessControlAllowMethods()');
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_origin($xcors, $swagger2path, $swagger2pathSpec);
+  is($retVal->[0], '*', 'Default overloaded _handle_access_control_allow_origin()');
+  $retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_credentials($xcors, $swagger2path, $swagger2pathSpec);
+  is($retVal, 'false', 'Default overloaded _handle_access_control_allow_credentials()');
+  $retVal = [sort(keys(Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_methods($xcors, $swagger2path, $swagger2pathSpec)))];
+  is($retVal->[0], '*', 'Default overloaded _handle_access_control_allow_methods()');
 
   ##x-cors path spec
 

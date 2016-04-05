@@ -104,7 +104,7 @@ sub register {
   $base_path =~ s!/$!!;
   $defaultCustomPlaceholder = $swagger->api_spec->data->{'x-mojo-placeholder'} || ':';
 
-  sub replace_route_placeholders {
+  my $_replace_route_placeholders = sub  {
     my ($route_path, $parameters, $defaultCustomPlaceholder) = @_;
     $route_path =~ s/{([^}]+)}/{
       my $name = $1;
@@ -112,7 +112,7 @@ sub register {
       "($type$name)";
     }/ge;
     return $route_path;
-  }
+  };
 
   for my $path (sort { length $a <=> length $b } keys %$paths) {
     my $around_action = $paths->{$path}{'x-mojo-around-action'} || $swagger->api_spec->get('/x-mojo-around-action');
@@ -124,7 +124,7 @@ sub register {
       my $route_path = $path;
       my %parameters = map { ($_->{name}, $_) } @{$op_spec->{parameters} || []};
 
-      $route_path = replace_route_placeholders($route_path, \%parameters, $defaultCustomPlaceholder);
+      $route_path = &$_replace_route_placeholders($route_path, \%parameters, $defaultCustomPlaceholder);
 
       $op_spec->{'x-mojo-around-action'} = $around_action if !$op_spec->{'x-mojo-around-action'} and $around_action;
       $op_spec->{'x-mojo-controller'}    = $controller    if !$op_spec->{'x-mojo-controller'}    and $controller;
@@ -137,8 +137,8 @@ sub register {
       warn "[Swagger2] Add route $http_method $base_path$route_path\n" if DEBUG;
     }
 
-    if ($xcors) { #Configure preflight handlers.
-      my $route_path = replace_route_placeholders($path, {}, $defaultCustomPlaceholder);
+    unless ($paths->{$path}->{'OPTIONS'} || $paths->{$path}->{'options'}) { #Configure default OPTIONS-request handler for this path
+      my $route_path = &$_replace_route_placeholders($path, {}, $defaultCustomPlaceholder);
 
       my $route_params = {}; #Add params for the route here
       Mojolicious::Plugin::Swagger2::CORS->get_opts($route_params, $xcors, $route_path, $paths->{$path}) if $xcors; #Set CORS options to $route_params
@@ -191,7 +191,7 @@ sub _generate_request_handler {
     return $c->render_swagger(_error($e), {}, 501) if $e = _find_action($c, $defaults);
     $c = $defaults->{controller}->new(%$c);
 
-    return if Mojolicious::Plugin::Swagger2::CORS->simple($c); #Return if we get an error
+    return if Mojolicious::Plugin::Swagger2::CORS->handle_simple_cors($c); #Return if we get an error
 
     ($v, $input) = $self->_validate_input($c, $op_spec);
 
@@ -250,7 +250,7 @@ sub _options_request_default_handler {
   my ($c) = @_;
 
   $c->res->headers->header('Allow'  => $c->stash('available_methods'));
-  my $errorMessages = Mojolicious::Plugin::Swagger2::CORS->preflight($c);
+  my $errorMessages = Mojolicious::Plugin::Swagger2::CORS->handle_preflight_cors($c);
   return $c->render(status => 200, data => $errorMessages || $c->stash('path_spec'));
 }
 
@@ -527,6 +527,18 @@ The "swagger_route_added" event will be emitted on the application object
 for every route that is added by this plugin. This can be useful if you
 want to do things like specifying a custom route name.
 
+=head1 DEFAULTS
+
+=head2 default OPTIONS-handler
+
+Each Swagger2-path which doesn't explicitly define a handler for OPTIONS-requests, gets an automatic OPTIONS-handler.
+This handler always responds
+
+  200 OK
+  Allow: Header returning all the HTTP methods this path is capable of accepting. GET, POST, PUT, ...
+
+  In body, the Swagger2 "Path Item Object" JSON for this path.
+
 =head1 STASH VARIABLES
 
 =head2 swagger
@@ -648,7 +660,7 @@ Either this parameter or C<swagger> need to be present.
 
 =head1 COPYRIGHT AND LICENSE
 
-Copyright (C) 2014-2015, Jan Henning Thorsen
+Copyright (C) 2014-2016, Jan Henning Thorsen
 
 This program is free software, you can redistribute it and/or modify it under
 the terms of the Artistic License version 2.0.
