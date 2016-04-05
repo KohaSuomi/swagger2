@@ -501,6 +501,8 @@ or look at L<Swagger2::Guides::Tutorial> for an introduction.
 
 =item * L<Swagger2::Guides::JSONSchemaSupport> - Adding json-schema support - EXPERIMENTAL
 
+=item * L<Mojolicious::Plugin::Swagger2::CORS> - CORS support
+
 =item * L<Swagger spec|https://github.com/jhthorsen/swagger2/blob/master/t/blog/api.json>
 
 =item * L<Application|https://github.com/jhthorsen/swagger2/blob/master/t/blog/lib/Blog.pm>

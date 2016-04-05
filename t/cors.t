@@ -14,6 +14,9 @@ use Mojolicious::Plugin::Swagger2;
 require_ok('Mojolicious::Plugin::Swagger2::CORS');
 use Mojolicious::Plugin::Swagger2::CORS;
 
+require_ok('t::CORS');
+use t::CORS;
+
 subtest "CORS internals", \&CORSInternals;
 sub CORSInternals {
   my ($xcors, $swagger2path, $swagger2pathSpec, $retVal);
@@ -22,7 +25,7 @@ sub CORSInternals {
   ### x-cors happy path! ###
   ##x-cors defaults
   $xcors = {
-    'x-cors-access-control-allow-origin-list' => 'http://cors.example.com /^https:\/\/.*kirjasto.*$/',
+    'x-cors-access-control-allow-origin-list' => 'http://cors.example.com /^https:\/\/.*kirjasto.*$/ t::CORS::origin_whitelist()',
     'x-cors-access-control-allow-credentials' => 'true',
     'x-cors-access-control-allow-methods' => 'GET, POST, DELETE',
   };
@@ -32,6 +35,8 @@ sub CORSInternals {
   is(ref $retVal->[1], 'Regexp', 'Default _handleAccessControlAllowOrigin() regexp');
   my $regexp = $retVal->[1];
   ok('https://testi.kirjasto.fi:9999' =~ /$regexp/, 'Default _handleAccessControlAllowOrigin() regexp successfully parsed');
+  is(ref $retVal->[2], 'CODE', 'Default _handleAccessControlAllowOrigin() subroutine');
+  is(&{$retVal->[2]}('http://cors.example.com:8080'), 'http://cors.example.com:8080', 'Default _handleAccessControlAllowOrigin() subroutine works!');
   $retVal = Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowCredentials($xcors, undef, undef);
   is($retVal, 'true', 'Default _handleAccessControlAllowCredentials()');
   $retVal = [sort(keys(Mojolicious::Plugin::Swagger2::CORS->_handleAccessControlAllowMethods($xcors, undef, undef)))];
@@ -122,6 +127,23 @@ sub simpleCORS {
   $tx = $ua->start($tx);
 
   is($tx->res->code, 200, "GET request 200 from allowed Origin");
+  $headers = $tx->res->headers;
+  is($headers->header('Access-Control-Allow-Origin'),      'http://cors.example.com:9999',   "Access-Control-Allow-Origin");
+  is($headers->header('Access-Control-Allow-Methods'),     undef,                            "Access-Control-Allow-Methods undef");
+  is($headers->header('Access-Control-Allow-Headers'),     undef,                            "Access-Control-Allow-Headers undef");
+  is($headers->header('Access-Control-Expose-Headers'),    undef,                            "Access-Control-Expose-Headers undef");
+  is($headers->header('Access-Control-Allow-Credentials'), undef,                            "Access-Control-Allow-Credentials undef. Only preflight can set this");
+  $json = $tx->res->json;
+  is($json->{pet1}, 'George',   "Got George...");
+  is($json->{pet2}, 'Georgina', "...and Georgina");
+
+  ## Make a GET request from remote Origin using a dynamic Origin handler ##
+  $ua = $t->ua;
+  $tx = $ua->build_tx(GET => '/api/cors-humans' => {Accept => '*/*'});
+  $tx->req->headers->add('Origin' => 'http://cors.example.com:9999');
+  $tx = $ua->start($tx);
+
+  is($tx->res->code, 200, "GET request 200 from allowed Origin using the dynamic Origin handler");
   $headers = $tx->res->headers;
   is($headers->header('Access-Control-Allow-Origin'),      'http://cors.example.com:9999',   "Access-Control-Allow-Origin");
   is($headers->header('Access-Control-Allow-Methods'),     undef,                            "Access-Control-Allow-Methods undef");
@@ -237,6 +259,8 @@ sub preflightRequest {
   is($headers->header('Access-Control-Allow-Credentials'), undef,                            "Access-Control-Allow-Credentials default overloaded");
 }
 
+done_testing();
+
 __DATA__
 @@ preflight.json
 {
@@ -253,6 +277,16 @@ __DATA__
     "x-cors-access-control-max-age": "600"
   },
   "paths": {
+    "/cors-humans": {
+      "x-cors-access-control-allow-origin-list": "t::CORS::origin_whitelist()",
+      "get": {
+        "x-mojo-controller": "t::Api",
+        "operationId": "corsListPets",
+        "responses": {
+          "200": {"description": "anything"}
+        }
+      }
+    },
     "/cors-pets": {
       "x-cors-access-control-allow-methods": "*",
       "get": {

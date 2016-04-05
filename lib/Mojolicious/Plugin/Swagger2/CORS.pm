@@ -1,3 +1,136 @@
+=encoding utf8
+
+=head1 NAME
+
+Mojolicious::Plugin::Swagger2::CORS - CORS support for the Mojolicious plugin for Swagger2
+
+=head1 SYNOPSIS
+
+  {
+    "swagger": "2.0",
+    "info": {...},
+    "host": "petstore.swagger.wordnik.com",
+    "basePath": "/api",
+    "x-cors": {
+      "x-cors-access-control-allow-origin-list": "*",
+      "x-cors-access-control-allow-credentials": "true",
+      "x-cors-access-control-allow-methods": "*",
+      "x-cors-access-control-max-age": "3600"
+    },
+    "paths": {
+      "/pets": {
+        "x-cors-access-control-allow-origin-list": "/https://regexp.matching.domain/ https://my.trusted.domain:443",
+        "x-cors-access-control-allow-credentials": "false",
+        "get": {...},
+        "post": {...}
+      },
+      "/pets/{id}": {
+        "x-cors-access-control-allow-methods": "PUT",
+        "put": {...},
+        "delete": {...}
+      }
+    }
+  }
+
+=head1 DESCRIPTION
+
+L<Mojolicious::Plugin::Swagger2::CORS> is L<Mojolicious::Plugin::Swagger2> extension
+that adds support for CORS to your Swagger2 API.
+
+The idea of this extension is to delegate worrying about CORS to the Swagger2-system and help
+keep programmers happy and productive!
+You can define default CORS options in the root Swagger2-element, and they are automatically
+inherited to the REST endpoints.
+You can also overload defaults from the Swagger2 "Path Item Object".
+
+=head1 CORS options
+
+These are the options to affect how your API endpoints react to CORS request.
+
+You must define the '/x-cors' root object to enable CORS support in the Swagger2 plugin, including reasonable defaults:
+  {
+    "swagger": "2.0",
+    "info": {...},
+    ...
+    "x-cors": {
+      "x-cors-access-control-allow-origin-list": "*",
+      "x-cors-access-control-allow-credentials": "true",
+      "x-cors-access-control-allow-methods": "*",
+      "x-cors-access-control-max-age": "3600"
+    },
+    ...
+  }
+
+Defaults can be overridden in the Swagger2 "Path Item Object". See SYNOPSIS on how to do that.
+
+=head2 x-cors-access-control-allow-origin-list
+
+Defines how the Access-Control-Allow-Origin response header is set.
+Defaults to not allowed.
+Supported values are:
+
+* - Allow any Origin-header content
+
+/regexp/ - Regular expression to match against the request Origin-header
+
+https://cors.example.com:443 - Static Origin-header value.
+
+MyApp::CORS::origin_whitelist() - Calls a subroutine to decide if the request's Origin-header
+                                  is acceptable and what values to put to the response header.
+                                  It must contain one or more '::' and end with () to be identified
+                                  as a subroutine by the subsystem.
+
+  ##Example of subroutine:
+  sub MyApp::CORS::origin_whitelist {
+    my ($origin) = @_;
+
+    return $origin if 'origin is accepted';
+    return undef if 'origin is not accepted';
+  }
+
+You can define a list of these values, and if any of the list values matches, the origin is accepted.
+
+  "x-cors-access-control-allow-origin-list": "/cors.example.com/ http:/static.example.com:8080 MyApp::CORS::origin_whitelist()"
+
+=head2 x-cors-access-control-allow-credentials
+
+Defines how the Access-Control-Allow-Credentials response header is set.
+Defaults to not allowed.
+Mainly defines if cookies can be sent with the request. Allowed values are:
+
+"true" - enable credentials
+
+"false" - disable credentials, only useful when overriding default behaviour
+
+=head2 x-cors-access-control-allow-methods
+
+Defines how the Access-Control-Allow-Methods response header is set.
+Defaults to no methods allowed.
+
+Accepted values is a list of all the HTTP standard's HTTP verbs/methods, or * to tell
+that all verbs/methods the path can receive are available.
+
+  "x-cors-access-control-allow-methods": "GET, POST, PUT, HEAD"
+
+=head2 x-cors-access-control-max-age
+
+Defines how the Access-Control-Allow-Max-Age response header is set.
+Defaults to 3600 seconds
+
+Accepted value is an integer signifying the CORS preflight cache expiration duration in seconds.
+
+=head2 x-cors-access-control-allow-headers
+
+This is not implemented, and by default all headers are accepted.
+
+=head2 x-cors-access-control-expose-headers
+
+This is not implemented, and by default all headers are exposed.
+
+=head1 Class subroutine definitions
+
+=cut
+
 package Mojolicious::Plugin::Swagger2::CORS;
 
 use constant DEBUG => $ENV{SWAGGER2_DEBUG} || 0;
@@ -23,7 +156,7 @@ sub use_CORS {
   return $xcors;
 }
 
-=head set_default_CORS
+=head2 set_default_CORS
 
   $class->set_default_CORS($route, $xcors);
 
@@ -40,7 +173,7 @@ sub set_default_CORS {
   $r->to(%$corsOpts);
 }
 
-=head get_opts
+=head2 get_opts
 
   $class->get_opts($route_params, $xcors, $path, $pathSpec);
 
@@ -162,6 +295,9 @@ sub _handleAccessControlAllowOrigin {
     if ($_ =~ m!^/(.*)/$!) { #This is a regexp, so cast it as such
       qr($1);
     }
+    elsif ($_ =~ m!^(.+?::.+?)\(\)$!) { #This is a subroutine, so cast it as such
+      \&{$1};
+    }
     else {
       $_;
     }
@@ -212,7 +348,7 @@ sub _handleAccessControlAllowMethods {
   return undef;
 }
 
-=head is_CORS_request
+=head2 is_CORS_request
 
   my $isCORS = $class->is_CORS_request($c);
 
@@ -238,6 +374,18 @@ sub is_CORS_request {
   return 1;
 }
 
+
+=head2 simple
+
+  $class->simple($c);
+
+Make a simple CORS check. Set CORS headers if check succeeds or there was no need for a CORS check,
+or return 403 if request is unauthorized.
+@param {Mojolicious::Controller} $c, the controller of the request-response -cycle
+@returns {Boolean}, true, if request failed CORS authorization, undef if everything is ok.
+
+=cut
+
 sub simple {
   my ($class, $c) = @_;
 
@@ -256,6 +404,19 @@ sub simple {
 
   return undef; #All is fine! Headers set! Full speed ahead!
 }
+
+=head2 preflight
+
+  my $errors = $class->preflight($c); #Sets CORS headers
+  $c->render(status => 200, data => {}) unless $errors;
+
+Handles the CORS preflight-request.
+Simply sets the required headers or returns a list of possible errors.
+This is intended to enhance the original OPTIONS-request handler, not substitute it.
+@param {Mojolicious::Controller} $c, the controller of the request-response -cycle
+@returns {ArrayRef} of errors, if request failed CORS authorization, empty ArrayRef if everything is ok.
+
+=cut
 
 sub preflight {
   my ($class, $c) = @_;
@@ -314,7 +475,9 @@ sub _cors_response_check_origin {
   if (ref $allowedOrigins eq 'ARRAY') {
     foreach my $ao (@$allowedOrigins) {
       if ((ref $ao eq 'Regexp' && $origin =~ /$ao/ms) || #Match regexp
-          ($ao eq '*' || $ao eq $origin) #or match anything or exact match
+          (ref $ao eq 'CODE' && &$ao($origin)) ||        #Match dynamic subroutine
+          $ao eq '*' ||                                  #Match anything
+          $ao eq $origin                                 #Exact match
           ) {
         $originOk = 1;
         $h->header('Access-Control-Allow-Origin' => $origin) if(not(@$errors));
