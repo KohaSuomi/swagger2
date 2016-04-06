@@ -33,7 +33,7 @@ sub CORSInternals {
   my $regexp = $retVal->[1];
   ok('https://testi.kirjasto.fi:9999' =~ /$regexp/, 'Default _handle_access_control_allow_origin() regexp successfully parsed');
   is(ref $retVal->[2], 'CODE', 'Default _handle_access_control_allow_origin() subroutine');
-  is(&{$retVal->[2]}('http://cors.example.com:8080'), 'http://cors.example.com:8080', 'Default _handle_access_control_allow_origin() subroutine works!');
+  is(&{$retVal->[2]}(Mojolicious::Controller->new, 'http://cors.example.com:8080'), 'http://cors.example.com:8080', 'Default _handle_access_control_allow_origin() subroutine works!');
   $retVal = Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_credentials($xcors, undef, undef);
   is($retVal, 'true', 'Default _handle_access_control_allow_credentials()');
   $retVal = [sort(keys(Mojolicious::Plugin::Swagger2::CORS->_handle_access_control_allow_methods($xcors, undef, undef)))];

@@ -81,8 +81,9 @@ MyApp::CORS::origin_whitelist() - Calls a subroutine to decide if the request's 
                                   as a subroutine by the subsystem.
 
   ##Example of subroutine:
+  #Parameters are a Mojolicious::Controller '$c' and a String '$origin'
   sub MyApp::CORS::origin_whitelist {
-    my ($origin) = @_;
+    my ($c, $origin) = @_;
 
     return $origin if 'origin is accepted';
     return undef if 'origin is not accepted';
@@ -475,7 +476,7 @@ sub _cors_response_check_origin {
   if (ref $allowedOrigins eq 'ARRAY') {
     foreach my $ao (@$allowedOrigins) {
       if ((ref $ao eq 'Regexp' && $origin =~ /$ao/ms) || #Match regexp
-          (ref $ao eq 'CODE' && &$ao($origin)) ||        #Match dynamic subroutine
+          (ref $ao eq 'CODE' && &$ao($c, $origin))    || #Match dynamic subroutine
           $ao eq '*' ||                                  #Match anything
           $ao eq $origin                                 #Exact match
           ) {
