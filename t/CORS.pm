@@ -26,4 +26,29 @@ sub origin_whitelist {
   return undef;
 }
 
+=head2 fake_authenticate
+
+Implements the Swagger2::Guides::ProtectedApi to authenticate using x-mojo-around-action
+
+By default fails all requests with HTTP status 401
+
+Increments $ENV{'SWAGGER2-CORS-FAKE-AUTHENTICATE'} every time this subroutine is called.
+
+@returns {undef} but renders 401 and JSON error.
+
+=cut
+
+sub fake_authenticate {
+  my ($next, $c, $opObj) = @_;
+
+  $ENV{'SWAGGER2-CORS-FAKE-AUTHENTICATE'} = 0 unless $ENV{'SWAGGER2-CORS-FAKE-AUTHENTICATE'};
+  $ENV{'SWAGGER2-CORS-FAKE-AUTHENTICATE'}++;
+
+  return $c->render_swagger(
+    {errors => [{message => "Always fail auth", path => "/"}]},
+    {},
+    401
+  );
+}
+
 1; #Make compiler happy!

@@ -136,6 +136,8 @@ package Mojolicious::Plugin::Swagger2::CORS;
 
 use constant DEBUG => $ENV{SWAGGER2_DEBUG} || 0;
 
+use Modern::Perl;
+
 =head2 use_CORS
 
   my $xcors = $class->use_CORS($app, $swagger);
@@ -390,6 +392,8 @@ or return 403 if request is unauthorized.
 sub handle_simple_cors {
   my ($class, $c) = @_;
 
+  return undef if $c->stash('simple_cors_checked'); #We might check CORS in x-mojo-around-action -hook already, prevent adding same headers twice.
+  return undef if $c->tx->req->method() eq 'OPTIONS'; #OPTIONS-request cannot be a "simple CORS" -request and most likely is a preflight request, or should behave as such.
   return undef unless $class->is_CORS_request($c);
 
   my $h = $c->res->headers;
@@ -403,7 +407,9 @@ sub handle_simple_cors {
   ## Report CORS errors ##
   return $c->render(status => 403, data => join(", ", @errors)) if @errors;
 
-  return undef; #All is fine! Headers set! Full speed ahead!
+  #All is fine! Headers set! Full speed ahead!
+  $c->stash(simple_cors_checked => 1);
+  return undef;
 }
 
 =head2 handle_preflight_cors
@@ -429,11 +435,11 @@ sub handle_preflight_cors {
 
   my @errors; #Collect all CORS errors here before returning a possible failure message
 
-  ## Access-Control-Allow-Methods ##
-  _cors_response_check_method($c, $h, $c->stash('cors.methods'), \@errors);
-
   ## Access-Control-Allow-Origin ##
   _cors_response_check_origin($c, $h, $c->stash('cors.origin'), \@errors);
+
+  ## Access-Control-Allow-Methods ##
+  _cors_response_check_method($c, $h, $c->stash('cors.methods'), \@errors);
 
   ## Report CORS errors, before headers are attached to the request ##
   return \@errors if @errors;
@@ -499,11 +505,11 @@ sub _cors_response_check_method {
     if ($allowedMethods->{'*'}) {
       $methodOk = 1;
       my $allMethods = join(', ', map {uc($_)} sort(@{$c->stash('available_methods')})) if $c->stash('available_methods');
-      $h->header('Access-Control-Allow-Methods' => $allMethods || $method) if(not(@errors));
+      $h->header('Access-Control-Allow-Methods' => $allMethods || $method) if(not(@$errors));
     }
     elsif ($allowedMethods->{uc($method)}) {
       $methodOk = 1;
-      $h->header('Access-Control-Allow-Methods' => join(', ', sort(keys(%$allowedMethods)))) if(not(@errors));
+      $h->header('Access-Control-Allow-Methods' => join(', ', sort(keys(%$allowedMethods)))) if(not(@$errors));
     }
   }
   push @$errors, "Method '$method' not allowed" if not($methodOk);

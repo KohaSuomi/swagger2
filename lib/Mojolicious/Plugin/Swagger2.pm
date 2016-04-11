@@ -224,6 +224,7 @@ sub _generate_request_handler {
     $handler = sub {
       my $c = shift;
       my $around = $c->can($around_action) || $around_action;
+      return if Mojolicious::Plugin::Swagger2::CORS->handle_simple_cors($c); #Return if we get an error
       $around->($next, $c, $op_spec);
     };
   }
@@ -251,7 +252,7 @@ sub _options_request_default_handler {
 
   $c->res->headers->header('Allow'  => $c->stash('available_methods'));
   my $errorMessages = Mojolicious::Plugin::Swagger2::CORS->handle_preflight_cors($c);
-  return $c->render(status => 200, data => $errorMessages || $c->stash('path_spec'));
+  return $c->render(status => 200, json => $errorMessages || $c->stash('path_spec'));
 }
 
 sub _render_spec {
