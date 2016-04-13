@@ -404,6 +404,9 @@ sub handle_simple_cors {
   ##For simple CORS we need less headers
   _cors_response_check_origin($c, $h, $c->stash('cors.origin'), \@errors);
 
+  ## Access-Control-Allow-Credentials ##
+  $h->header('Access-Control-Allow-Credentials' => 'true') if ($c->stash('cors.credentials'));
+
   ## Report CORS errors ##
   return $c->render(status => 403, data => join(", ", @errors)) if @errors;
 
